@@ -14,12 +14,18 @@ label{display:block;margin:14px 0 5px;font-weight:600}input,textarea,.primary{wi
 .week{font-size:14px;color:#546759;margin:14px 0 6px}.days button{position:relative;min-height:44px;padding:4px 0 10px;border-color:transparent}
 .days button[data-record]::after{content:"";position:absolute;bottom:4px;left:calc(50% - 3px);width:6px;height:6px;background:currentColor;border-radius:50%}
 .hint{color:#536858;font-size:14px;margin:10px 0 0}.entry{white-space:pre-wrap;overflow-wrap:anywhere}.delete{color:#922f2f}button:focus-visible,a:focus-visible{outline:3px solid #b77d19}
+details,fieldset{margin:14px 0;padding:12px;border:1px solid #c4d3c7;border-radius:10px;background:white;min-width:0}
+summary{cursor:pointer;color:#245b37;font-weight:bold}select{width:100%;min-width:0;font:inherit;padding:9px 2px;border:1px solid #a9bcac;border-radius:8px;background:white}
+.numbers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}fieldset label{margin:4px 0 8px}#register button{margin-top:8px}
 </style>
 <h1>내 운동 기록장</h1>
 <nav><a href="#write" id="writeLink">운동 쓰기</a><a href="#history" id="historyLink">날짜별 기록</a></nav>
 <section id="writePage"><h2>운동 쓰기</h2>
+<details id="catalog"><summary>운동 이름 등록</summary>
+<form id="register"><label for="newName">새 운동 이름</label>
+<input id="newName" placeholder="예: 데드리프트" maxlength="80" required><button>등록</button></form></details>
 <form id="form"><label for="date">운동한 날짜</label><input type="date" id="date" required>
-<label for="note">운동 내용</label><textarea id="note" rows="9" required placeholder="데드리프트&#10;20kg 10회 1세트&#10;50kg 10회 2세트"></textarea>
+<div id="rows"></div><button type="button" id="add">＋ 다른 운동 추가</button>
 <button class="primary">운동 기록 저장</button></form></section>
 <section id="historyPage" hidden><h2>날짜별 기록</h2>
 <div class="calendar"><div class="month"><button id="prev" aria-label="이전 달">‹</button><strong id="month"></strong><button id="next" aria-label="다음 달">›</button></div>
@@ -107,10 +113,80 @@ function moveMonth(delta) {
 el("prev").onclick = () => moveMonth(-1);
 el("next").onclick = () => moveMonth(1);
 el("unknown").onclick = () => { selected = "unknown"; render(); };
+function readNames() {
+  const names = JSON.parse(localStorage.getItem("myWorkoutNames") || "[]");
+  if (!Array.isArray(names) || !names.every(name => typeof name === "string")) throw Error();
+  return names;
+}
+let names = [];
+try { names = readNames(); } catch { /* Registration retries the read before writing. */ }
+function setOptions(select, selected) {
+  select.replaceChildren(new Option("운동 선택", ""));
+  for (const name of names) select.add(new Option(name, name));
+  select.value = selected;
+}
+function addRow() {
+  const row = document.createElement("fieldset");
+  row.innerHTML = '<legend>운동 항목</legend><label>운동 이름<select class="exercise" required></select></label><div class="sets"></div><button type="button" class="add-set">＋ 세트 줄 추가</button> <button type="button" class="remove-exercise">운동 항목 삭제</button>';
+  setOptions(row.querySelector("select"), el("rows").children.length ? "" : names[0] || "");
+  const sets = row.querySelector(".sets");
+  addSet(sets);
+  row.querySelector(".add-set").onclick = () => addSet(sets,rowValues(sets.lastElementChild));
+  row.querySelector(".remove-exercise").onclick = () => {
+    row.remove();
+    if (!el("rows").children.length) addRow();
+  };
+  el("rows").append(row);
+}
+function addSet(sets,previous) {
+  const line = document.createElement("div");
+  line.className = "set-line";
+  line.innerHTML = '<div class="numbers"></div><button type="button">이 줄 삭제</button>';
+  const settings = [["무게 (kg)",0,300,0.5,20],["반복 수",1,100,1,10],["세트 수",1,30,1,1]];
+  settings.forEach(([title,min,max,step,initial], index) => {
+    const label = document.createElement("label");
+    label.textContent = title;
+    const select = document.createElement("select");
+    for (let value=min; value<=max; value+=step) select.add(new Option(value,value));
+    select.value = previous?.[index] ?? initial;
+    label.append(select);
+    line.querySelector(".numbers").append(label);
+  });
+  line.querySelector("button").onclick = () => {
+    line.remove();
+    if (sets.children.length === 1) sets.querySelector("button").hidden = true;
+  };
+  sets.append(line);
+  for (const button of sets.querySelectorAll("button")) button.hidden = sets.children.length === 1;
+}
+function rowValues(row) {
+  return Array.from(row.querySelectorAll("select"), select => select.value);
+}
+el("catalog").open = !names.length;
+addRow();
+el("add").onclick = addRow;
+el("register").onsubmit = event => {
+  event.preventDefault();
+  const name = el("newName").value.trim();
+  if (!name) { el("status").textContent = "운동 이름을 입력해 주세요."; return; }
+  try {
+    const updated = [...new Set([...readNames(), name])];
+    localStorage.setItem("myWorkoutNames", JSON.stringify(updated));
+    names = updated;
+    for (const select of document.querySelectorAll(".exercise")) setOptions(select,select.value || name);
+    el("newName").value = "";
+    el("status").textContent = name+" 항목을 선택할 수 있어요.";
+  } catch { el("status").textContent = "운동 이름을 저장하지 못했어요."; }
+};
 el("form").onsubmit = event => {
   event.preventDefault();
-  const text = el("note").value.trim();
-  if (!text) { el("status").textContent = "운동 내용을 입력해 주세요."; return; }
+  const text = Array.from(el("rows").children, row => {
+    const lines = Array.from(row.querySelectorAll(".set-line"), line => {
+      const [weight,reps,sets] = rowValues(line);
+      return weight+"kg "+reps+"회 "+sets+"세트";
+    });
+    return [row.querySelector(".exercise").value,...lines].join("\n");
+  }).join("\n\n");
   const date = el("date").value;
   try {
     const records = read();
@@ -119,7 +195,8 @@ el("form").onsubmit = event => {
     save(records);
     selected = date;
     month = new Date(date.slice(0,7)+"-01T00:00:00");
-    el("note").value = "";
+    el("rows").replaceChildren();
+    addRow();
     el("status").textContent = date+" 운동을 저장했어요.";
   } catch { el("status").textContent = "저장하지 못했어요. 입력 내용을 복사해 보관해 주세요."; }
 };
