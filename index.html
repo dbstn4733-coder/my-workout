@@ -2,6 +2,13 @@
 <html lang="ko">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png">
+<meta name="theme-color" content="#24633d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="My Workout">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>내 운동 기록장</title>
 <style>
 *{box-sizing:border-box}body{max-width:520px;margin:auto;padding:18px 14px 48px;background:#f5f7f5;color:#202820;font:16px/1.5 system-ui,sans-serif}
@@ -260,5 +267,13 @@ function showPage() {
 }
 window.addEventListener("hashchange", showPage);
 showPage();
+</script>
+<script>
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js", {updateViaCache: "none"})
+      .catch(error => console.warn("오프라인 모드를 준비하지 못했어요.", error));
+  });
+}
 </script>
 </html>
