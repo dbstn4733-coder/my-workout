@@ -17,6 +17,7 @@ label{display:block;margin:14px 0 5px;font-weight:600}input,textarea,.primary{wi
 details,fieldset{margin:14px 0;padding:12px;border:1px solid #c4d3c7;border-radius:10px;background:white;min-width:0}
 summary{cursor:pointer;color:#245b37;font-weight:bold}select{width:100%;min-width:0;font:inherit;padding:9px 2px;border:1px solid #a9bcac;border-radius:8px;background:white}
 .numbers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}fieldset label{margin:4px 0 8px}#register button{margin-top:8px}
+.sticker{display:block;width:fit-content;max-width:100%;margin:2px auto;padding:1px 4px;background:#fff0c5;color:#523818;border-radius:6px;font-size:11px;line-height:1.4;font-weight:700}
 </style>
 <h1>내 운동 기록장</h1>
 <nav><a href="#write" id="writeLink">운동 쓰기</a><a href="#history" id="historyLink">날짜별 기록</a></nav>
@@ -25,7 +26,7 @@ summary{cursor:pointer;color:#245b37;font-weight:bold}select{width:100%;min-widt
 <form id="register"><label for="newName">새 운동 이름</label>
 <input id="newName" placeholder="예: 데드리프트" maxlength="80" required><button>등록</button></form></details>
 <form id="form"><label for="date">운동한 날짜</label><input type="date" id="date" required>
-<div id="rows"></div><button type="button" id="add">＋ 다른 운동 추가</button>
+<label for="area">주요 운동 부위</label><select id="area"></select><div id="rows"></div><button type="button" id="add">＋ 다른 운동 추가</button>
 <button class="primary">운동 기록 저장</button></form></section>
 <section id="historyPage" hidden><h2>날짜별 기록</h2>
 <div class="calendar"><div class="month"><button id="prev" aria-label="이전 달">‹</button><strong id="month"></strong><button id="next" aria-label="다음 달">›</button></div>
@@ -57,6 +58,40 @@ function read() {
   });
 }
 function save(records) { localStorage.setItem("myWorkouts", JSON.stringify(records)); }
+const areas = ["가슴","등","어깨","팔","하체","복부","전신"];
+function fillAreas(select, current = "") {
+  select.add(new Option("선택 안 함", ""));
+  for (const area of areas) select.add(new Option(area, area));
+  select.value = current;
+}
+fillAreas(el("area"));
+function editCard(card, record) {
+  const form = document.createElement("form");
+  form.innerHTML = '<label>운동한 날짜<input type="date" name="date"></label><label>주요 운동 부위<select name="area"></select></label><label>운동 내용<textarea rows="6" name="notes" required></textarea></label><button class="primary">수정 저장</button> <button type="button">취소</button>';
+  const {date,area,notes} = form.elements;
+  date.value = record.date === "unknown" ? "" : record.date;
+  date.required = record.date !== "unknown";
+  fillAreas(area, record.area);
+  notes.value = record.text;
+  form.querySelector('[type="button"]').onclick = render;
+  form.onsubmit = event => {
+    event.preventDefault();
+    if (!notes.value.trim()) { notes.focus(); return; }
+    try {
+      const records = read();
+      const item = records.find(r => r.id === record.id);
+      if (!item) { render(); el("status").textContent = "이미 삭제된 기록이에요."; return; }
+      Object.assign(item, {date:date.value || "unknown", area:area.value, text:notes.value});
+      save(records);
+      selected = item.date;
+      if (date.value) month = new Date(date.value.slice(0,7)+"-01T00:00:00");
+      render();
+      el("status").textContent = "수정했어요.";
+    } catch { el("status").textContent = "수정 내용을 저장하지 못했어요."; }
+  };
+  card.replaceChildren(form);
+  notes.focus();
+}
 function render() {
   el("entries").replaceChildren();
   el("days").replaceChildren();
@@ -74,6 +109,14 @@ function render() {
       button.textContent = day;
       button.setAttribute("aria-pressed", String(selected === key));
       button.setAttribute("aria-label", key + (dates.has(key) ? " 운동 기록 있음" : ""));
+      const stickers = [...new Set(records.filter(r => r.date === key && r.area).map(r => r.area))];
+      if (stickers.length) button.setAttribute("aria-label", key+" 운동 기록: "+stickers.join(", "));
+      for (const area of stickers) {
+        const badge = document.createElement("span");
+        badge.className = "sticker";
+        badge.textContent = area;
+        button.append(badge);
+      }
       button.toggleAttribute("data-record",dates.has(key));
       button.onclick = () => { selected = key; render(); el("days").querySelector('[aria-pressed="true"]').focus(); };
       el("days").append(button);
@@ -100,7 +143,11 @@ function render() {
           el("status").textContent = "삭제했어요.";
         } catch { el("status").textContent = "기록을 삭제하지 못했어요."; }
       };
-      card.append(title,text,remove);
+      if (record.area) title.textContent += " · "+record.area;
+      const edit = document.createElement("button");
+      edit.textContent = "기록 수정";
+      edit.onclick = () => editCard(card, record);
+      card.append(title,text,edit,remove);
       el("entries").append(card);
     }
   } catch { el("status").textContent = "저장된 기록을 읽지 못했어요."; }
@@ -190,11 +237,12 @@ el("form").onsubmit = event => {
   const date = el("date").value;
   try {
     const records = read();
-    records.push({id:Date.now()+"-"+Math.random(), date, text,
+    records.push({id:Date.now()+"-"+Math.random(), date, text, area:el("area").value,
       time:new Date().toLocaleTimeString("ko-KR",{hour:"numeric",minute:"2-digit"})});
     save(records);
     selected = date;
     month = new Date(date.slice(0,7)+"-01T00:00:00");
+    el("area").value = "";
     el("rows").replaceChildren();
     addRow();
     el("status").textContent = date+" 운동을 저장했어요.";
